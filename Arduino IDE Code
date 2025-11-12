@@ -1,0 +1,93 @@
+#include <Servo.h>
+#include <LiquidCrystal_I2C.h>
+#include <SPI.h>
+#include <MFRC522.h>
+
+#define SS_PIN 10
+#define RST_PIN 9
+
+// ✅ Authorized UID stored as bytes (your UID: B9 58 97 94)
+byte authorizedUID[4] = {0xB9, 0x58, 0x97, 0x94};
+
+Servo servo;
+LiquidCrystal_I2C lcd(0x27, 16, 2);
+MFRC522 rfid(SS_PIN, RST_PIN);
+
+byte lock = 0;
+
+void setup() {
+  Serial.begin(9600);
+
+  lcd.init();
+  lcd.backlight();
+
+  servo.attach(3);
+  servo.write(70);  // Locked position
+
+  SPI.begin();
+  rfid.PCD_Init();
+
+  lcd.setCursor(3, 0);
+  lcd.print("System Ready");
+  delay(1000);
+  lcd.clear();
+}
+
+void loop() {
+  lcd.setCursor(4, 0);
+  lcd.print("Welcome!");
+  lcd.setCursor(1, 1);
+  lcd.print("Put your card");
+
+  // Wait for card
+  if (!rfid.PICC_IsNewCardPresent())
+    return;
+  if (!rfid.PICC_ReadCardSerial())
+    return;
+
+  // Print scanned UID to Serial Monitor
+  Serial.print("Card UID:");
+  for (byte i = 0; i < rfid.uid.size; i++) {
+    Serial.print(rfid.uid.uidByte[i] < 0x10 ? " 0" : " ");
+    Serial.print(rfid.uid.uidByte[i], HEX);
+  }
+  Serial.println();
+
+  // Compare UID
+  if (checkUID(rfid.uid.uidByte, authorizedUID)) {
+    if (lock == 0) {
+      servo.write(160);  // Unlock position
+      lcd.clear();
+      lcd.setCursor(0, 0);
+      lcd.print("Door is open");
+      delay(1500);
+      lcd.clear();
+      lock = 1;
+    } else {
+      servo.write(70);   // Lock position
+      lcd.clear();
+      lcd.setCursor(0, 0);
+      lcd.print("Door is locked");
+      delay(1500);
+      lcd.clear();
+      lock = 0;
+    }
+  } else {
+    lcd.clear();
+    lcd.setCursor(0, 0);
+    lcd.print("Wrong card!");
+    delay(1500);
+    lcd.clear();
+  }
+
+  rfid.PICC_HaltA();      // Stop reading
+  rfid.PCD_StopCrypto1(); // Stop encryption on PCD
+}
+
+// ✅ Function to compare two UIDs
+bool checkUID(byte *a, byte *b) {
+  for (byte i = 0; i < 4; i++) {
+    if (a[i] != b[i]) return false;
+  }
+  return true;
+}
